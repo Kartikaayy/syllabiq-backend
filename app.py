@@ -25,7 +25,6 @@ def map_syllabus():
     if request.method == 'OPTIONS':
         return '', 200
 
-    # --- Read PDF ---
     if 'syllabus' not in request.files:
         return jsonify({"error": "No syllabus PDF uploaded."}), 400
 
@@ -41,7 +40,6 @@ def map_syllabus():
     if not syllabus_text.strip():
         return jsonify({"error": "Could not extract text from PDF. Make sure it is not a scanned image."}), 400
 
-    # --- Optional context ---
     course_name   = request.form.get('courseName', '').strip()
     course_stream = request.form.get('courseStream', '').strip()
     career_goal   = request.form.get('careerGoal', '').strip()
@@ -51,13 +49,11 @@ def map_syllabus():
     if course_stream: context_lines.append(f"Stream / Domain: {course_stream}")
     if career_goal:   context_lines.append(f"Student's Career Goal: {career_goal}")
     context_block = "\n".join(context_lines)
-
-    # Pre-build context header to avoid backslash in f-string (Python < 3.12 fix)
     context_header = ("STUDENT CONTEXT:\n" + context_block) if context_block else ""
 
     prompt = f"""
 You are an expert academic-to-industry skills mapper. Analyze the provided syllabus and map it
-to practical real-world skills, project ideas, certifications, and career paths.
+to practical real-world skills, project ideas, certifications, career paths, and learning resources.
 
 Be specific to the actual content of the syllabus. Avoid generic responses.
 Tailor everything to what the student would actually study and use professionally.
@@ -101,6 +97,16 @@ Return ONLY valid JSON — no markdown, no explanation, no extra text:
       "key_skills": ["skill1", "skill2", "skill3"]
     }}
   ],
+  "learning_resources": [
+    {{
+      "skill": "The skill this resource teaches",
+      "platform": "YouTube | Coursera | Udemy | freeCodeCamp | MIT OpenCourseWare | Khan Academy | official docs",
+      "title": "Exact course or channel name",
+      "type": "Free | Paid | Free with certificate",
+      "url_hint": "Search query the student can use to find it e.g. 'CS50 Harvard YouTube' or 'Andrew Ng Machine Learning Coursera'",
+      "why": "One sentence: why this is the best resource for this skill"
+    }}
+  ],
   "overall_summary": "3-4 sentences: the syllabus's industry relevance, what roles it prepares students for, and the top 1-2 action items the student should prioritize."
 }}
 
@@ -109,6 +115,7 @@ Constraints:
 - Return 4-6 project ideas (range from beginner to advanced)
 - Return 3-5 certifications (realistic, widely recognized ones)
 - Return 3-5 career paths
+- Return 6-10 learning resources covering the most important skills (mix of free and paid, YouTube and courses)
 - Be specific: reference actual topics from the syllabus
 """
 
@@ -116,7 +123,7 @@ Constraints:
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
-        max_tokens=3500
+        max_tokens=4000
     )
 
     text = response.choices[0].message.content.strip()
