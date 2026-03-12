@@ -25,21 +25,28 @@ def map_syllabus():
     if request.method == 'OPTIONS':
         return '', 200
 
-    if 'syllabus' not in request.files:
-        return jsonify({"error": "No syllabus PDF uploaded."}), 400
+    syllabus_text = ""
 
-    syllabus_file = request.files['syllabus']
-    try:
-        with pdfplumber.open(syllabus_file) as pdf:
-            syllabus_text = " ".join(
-                page.extract_text() for page in pdf.pages if page.extract_text()
-            )
-    except Exception as e:
-        return jsonify({"error": f"Could not read PDF: {str(e)}"}), 400
+    # --- PDF upload ---
+    if 'syllabus' in request.files:
+        syllabus_file = request.files['syllabus']
+        try:
+            with pdfplumber.open(syllabus_file) as pdf:
+                syllabus_text = " ".join(
+                    page.extract_text() for page in pdf.pages if page.extract_text()
+                )
+        except Exception as e:
+            return jsonify({"error": f"Could not read PDF: {str(e)}"}), 400
+
+    # --- Typed topics ---
+    typed_topics = request.form.get('topics', '').strip()
+    if typed_topics:
+        syllabus_text = typed_topics
 
     if not syllabus_text.strip():
-        return jsonify({"error": "Could not extract text from PDF. Make sure it is not a scanned image."}), 400
+        return jsonify({"error": "Please upload a PDF or type your syllabus topics."}), 400
 
+    # --- Optional context ---
     course_name   = request.form.get('courseName', '').strip()
     course_stream = request.form.get('courseStream', '').strip()
     career_goal   = request.form.get('careerGoal', '').strip()
@@ -53,10 +60,10 @@ def map_syllabus():
 
     prompt = f"""
 You are an expert academic-to-industry skills mapper. Analyze the provided syllabus and map it
-to practical real-world skills, project ideas, certifications, career paths, and learning resources.
+to practical real-world skills, project ideas, certifications, and career paths.
 
-Be specific to the actual content of the syllabus. Avoid generic responses.
-Tailor everything to what the student would actually study and use professionally.
+Be specific to the actual content. Avoid generic responses.
+For certifications, you MUST provide a real, working URL to the official course or certification page.
 
 {context_header}
 
@@ -83,9 +90,10 @@ Return ONLY valid JSON — no markdown, no explanation, no extra text:
   "certifications": [
     {{
       "name": "Full certification name",
-      "provider": "Issuing organization (Google, AWS, Microsoft, Coursera, etc.)",
+      "provider": "Issuing organization (e.g. Google, AWS, Microsoft, Coursera, Udemy)",
       "description": "One sentence on what it validates",
-      "relevance": "Short phrase: why this cert aligns with the syllabus"
+      "relevance": "Short phrase: why this cert aligns with the syllabus",
+      "url": "Real direct URL to the cert/course page e.g. https://grow.google/certificates/ or https://aws.amazon.com/certification/"
     }}
   ],
   "career_paths": [
@@ -97,26 +105,15 @@ Return ONLY valid JSON — no markdown, no explanation, no extra text:
       "key_skills": ["skill1", "skill2", "skill3"]
     }}
   ],
-  "learning_resources": [
-    {{
-      "skill": "The skill this resource teaches",
-      "platform": "YouTube | Coursera | Udemy | freeCodeCamp | MIT OpenCourseWare | Khan Academy | official docs",
-      "title": "Exact course or channel name",
-      "type": "Free | Paid | Free with certificate",
-      "url_hint": "Search query the student can use to find it e.g. 'CS50 Harvard YouTube' or 'Andrew Ng Machine Learning Coursera'",
-      "why": "One sentence: why this is the best resource for this skill"
-    }}
-  ],
   "overall_summary": "3-4 sentences: the syllabus's industry relevance, what roles it prepares students for, and the top 1-2 action items the student should prioritize."
 }}
 
 Constraints:
 - Return 6-12 skills
-- Return 4-6 project ideas (range from beginner to advanced)
-- Return 3-5 certifications (realistic, widely recognized ones)
+- Return 4-6 project ideas (beginner to advanced range)
+- Return 3-5 certifications with REAL urls (use known cert pages like coursera.org, aws.amazon.com, cloud.google.com, microsoft.com/certifications, etc.)
 - Return 3-5 career paths
-- Return 6-10 learning resources covering the most important skills (mix of free and paid, YouTube and courses)
-- Be specific: reference actual topics from the syllabus
+- Be specific to the actual syllabus content
 """
 
     response = client.chat.completions.create(
